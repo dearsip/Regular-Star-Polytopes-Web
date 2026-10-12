@@ -1,2 +1,5 @@
-# Auto detect text files and perform LF normalization
 * text=auto
+*.bin.gz -text -diff
+# Preserve the exact vendored bytes checked by manifest.json on every OS.
+vendor/three/*.js -text
+vendor/three/LICENSE -text

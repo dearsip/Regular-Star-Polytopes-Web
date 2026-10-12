@@ -1,10 +1,13 @@
 {
-  "name": "crf-three-viewer",
+  "name": "regular-star-polytopes-web",
   "version": "0.1.0",
-  "type": "module",
   "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
   "scripts": {
-    "serve": "python3 -m http.server 8080",
+    "serve": "node tools/serve.mjs",
+    "build": "node tools/build.mjs",
+    "test": "node tools/validate-data.mjs",
     "convert": "node tools/off-to-crfmesh.mjs"
   }
 }

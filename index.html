@@ -1,98 +1,55 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Polychoron Viewer</title>
-  <link rel="stylesheet" href="./style.css" />
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js"
-      }
-    }
-  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Explore all four regular star polyhedra and ten regular star polychora with interactive projections and geometric occlusion.">
+  <title>Regular Star Polytopes</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 3 50 57 4 23 60 23 14 57Z' fill='none' stroke='%2380d5df' stroke-width='4'/%3E%3C/svg%3E">
+  <script type="importmap">{"imports":{"three":"./vendor/three/three.module.js"}}</script>
 </head>
 <body>
   <main class="app">
-    <section class="stage" aria-label="Polychoron viewer">
-      <canvas id="viewer"></canvas>
-      <button id="toggleBtn">>></button>
+    <section class="stage" aria-label="投影ビュー Projection viewer">
+      <canvas id="viewer" aria-label="ドラッグして回転 Drag to rotate"></canvas>
+      <button id="togglePanel" type="button" aria-expanded="true" aria-controls="panel" aria-label="操作パネルを切り替え Toggle controls">☰</button>
+      <div class="caption"><span id="dimension">4D → 3D</span><strong id="title">Regular Star Polytopes</strong><span id="symbol"></span></div>
+      <p id="loading" role="status">Loading…</p>
     </section>
-
-    <aside id="sidebar" class="panel">
-      <h1> <a href="https://github.com/dearsip/CRF-Polychoron-Viewer" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;"> Polychoron Viewer</a></h1>
-
-      <label class="control">
-        <span>FoV <output id="fovValue"></output></span>
-        <input id="fov" type="range" min="-180" max="180" step="0.1" value="0" />
-      </label>
-      <label class="control">
-        <span>Filter <output id="filterValue"></output></span>
-        <input id="filter" type="range" min="-90" max="90" step="0.1" value="-90" />
-      </label>
-      <label class="control">
-        <span>Zoom <output id="zoomValue"></output></span>
-        <input id="zoom" type="range" min="0" max="8" step="0.01" value="0" />
-      </label>
-      <label class="control check-control">
-        <span>Arcball</span>
-        <input id="arcball" type="checkbox"/>
-      </label>
-
-      <label class="control">
-        <span>Stereo</span>
-        <select id="stereo">
-          <option value="off">Off</option>
-          <option value="parallel">Side-by-side</option>
-          <option value="cross">Cross-eyed</option>
-        </select>
-      </label>
-
-      <div class="buttons">
-        <button id="resetRotation" type="button">Reset rotation</button>
-        <button id="exportUrl" type="button">Export Settings</button>
+    <aside id="panel" class="panel">
+      <h1>Regular Star Polytopes</h1>
+      <p class="subhead">星型正多面体・正多胞体の投影</p>
+      <label class="control"><span>図形 / Polytope</span><select id="model" disabled></select></label>
+      <a id="wiki" class="wiki" target="_blank" rel="noopener noreferrer">Polytope wiki ↗</a>
+      <div class="control"><span>表示 / Display</span><div id="modes" class="modes" role="group" aria-label="表示モード">
+        <button data-mode="full" type="button">Full</button>
+        <button data-mode="single" type="button">Single cell</button>
+        <button data-mode="radial" type="button">Single cell + radial exterior</button>
+        <button data-mode="vertex" type="button">Vertex neighborhood</button>
+        <button data-mode="explosion" type="button">Explosion</button>
+      </div></div>
+      <label id="groupControl" class="control" hidden><span>頂点の種類 / Vertex type</span><select id="group"></select></label>
+      <label id="explosionControl" class="control" hidden><span>Explosion <output id="explosionValue">0%</output></span><input id="explosion" type="range" min="0" max="1" step="0.005" value="0"></label>
+      <label class="control"><span>FoV <output id="fovValue"></output></span><input id="fov" type="range" min="-175" max="175" step="0.1" value="0"></label>
+      <label id="filterControl" class="control"><span>Depth filter <output id="filterValue"></output></span><input id="filter" type="range" min="-90" max="90" step="0.1" value="-90"></label>
+      <label class="control"><span>Zoom <output id="zoomValue"></output></span><input id="zoom" type="range" min="-1" max="4" step="0.01" value="0"></label>
+      <div class="checks">
+        <label><input id="occlusion" type="checkbox" checked> 遮蔽 / Occlusion</label>
+        <label id="hopfControl"><input id="hopf" type="checkbox" checked> Hopf colors</label>
+        <label><input id="arcball" type="checkbox"> Arcball</label>
+        <label><input id="inertia" type="checkbox" checked> 離した後も回転 / Inertia</label>
       </div>
-
-      <label class="control">
-        <span>Mesh / OFF URL</span>
-        <input id="url" type="url" placeholder="./meshes/tesseract.crfmesh.json" />
-      </label>
-      <div class="buttons">
-        <button id="loadUrl" type="button">Load URL</button>
-        <button id="downloadMesh" type="button">Download mesh</button>
-      </div>
-
-      <label class="control file">
-        <span>Local .crfmesh.json / .off</span>
-        <input id="fileInput" type="file" accept=".json,.off" />
-      </label>
-
-      <p class="help">
-        Left drag: visible 3D spin. Right drag or two-finger drag: 4D rotation.<br>
-        To hide the panel by default, add <code>?panel=hide</code> to the URL.
-      </p>
-      <p id="status" class="status">Ready.</p>
-      <p id="stats" class="help">Loading...</p>
+      <label class="control"><span>立体視 / Stereo</span><select id="stereo"><option value="off">Off</option><option value="parallel">Side-by-side</option><option value="cross">Cross-eyed</option></select></label>
+      <label id="eyeSpacingControl" class="control" hidden><span>両眼間隔 / Eye spacing <output id="eyeSpacingValue"></output></span><input id="eyeSpacing" type="range" min="0" max="1" step="0.005" value="0.25"></label>
+      <label class="control"><span>描画解像度 / Resolution</span><select id="resolution"><option value="0.5">Low</option><option value="1" selected>Standard</option><option value="1.5">High</option></select></label>
+      <div class="buttons"><button id="reset" type="button">Reset</button><button id="pause" type="button">Pause</button><button id="share" type="button">Copy view URL</button></div>
+      <p id="status" class="status" role="status"></p>
+      <p id="cost" class="cost" hidden>GPU負荷が高い図形です。重い場合は解像度を下げてください。<br>High GPU workload: try Low resolution.</p>
+      <p class="help" id="help">左ドラッグ：3D回転。右ドラッグ・2本指：4D回転。<br>Left drag: 3D spin. Right drag / two fingers: 4D rotation.</p>
+      <footer>Based on <a href="https://github.com/dearsip/CRF-Polychoron-Viewer" target="_blank" rel="noopener noreferrer">CRF-Polychoron-Viewer</a></footer>
     </aside>
   </main>
-
-  <script type="module" src="./src/main.js">
-    const params = new URLSearchParams(window.location.search);
-    const btn = document.getElementById('toggleBtn');
-    const sidebar = document.getElementById('sidebar');
-
-    let isClosed = false;
-
-    btn.addEventListener('click', () => {
-      isClosed = !isClosed;
-
-      sidebar.classList.toggle('closed');
-      btn.classList.toggle('closed');
-
-      btn.textContent = isClosed ? '❮' : '❯';
-    });
-
-  </script>
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>

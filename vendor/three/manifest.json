@@ -1,0 +1,13 @@
+{
+  "version": "0.184.0",
+  "urls": {
+    "three.module.js": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+    "three.core.js": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.core.js",
+    "LICENSE": "https://cdn.jsdelivr.net/npm/three@0.184.0/LICENSE"
+  },
+  "sha256": {
+    "three.module.js": "61134198639a10885daf893fb29669ca26386e2a4cde76e8399f51e329f741f2",
+    "three.core.js": "368dc78835287709a48939e8eb9a7a61d0732098bdf916e56840d458aae9ccf3",
+    "LICENSE": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc"
+  }
+}

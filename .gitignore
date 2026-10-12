@@ -1,1 +1,4 @@
 dist/
+node_modules/
+test-artifacts/
+__pycache__/
