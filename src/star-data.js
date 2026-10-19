@@ -77,7 +77,7 @@ export async function loadModel(id, signal) {
     resources.original.setAttribute('aEntry',new THREE.BufferAttribute(new Float32Array(metadata.original.vertices).fill(-1),1));
     const ids=resources.surface.getAttribute('aUnit').array;
     const entries=new Float32Array(ids.length).fill(-1);
-    if(metadata.dimension===4){
+    if(metadata.dimension===4&&!metadata.compound){
         const atlas=new Float32Array(assets[4]),seed=Math.round(atlas[3])*4;
         for(let i=0;i<ids.length;i++)entries[i]=atlas[seed+ids[i]];
     }

@@ -1,0 +1,28 @@
+<!doctype html><meta charset="utf-8"><title>Stella octangula GPU validation</title><pre id="results">Running…</pre>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import {texture} from '../src/star-data.js';
+import {stellaOcclusionGLSL} from '../src/star-shader.js';
+const output=document.querySelector('#results');
+try {
+ const probes=await(await fetch('./stella-probes.json')).json(),n=probes.length,pixels=new Float32Array(n*12);
+ for(let j=0;j<n;j++){const p=probes[j];pixels.set([...p.p,0],j*12);pixels.set([...p.back,0],j*12+4);pixels.set([p.sine,+p.hidden,0,0],j*12+8);}
+ const data=texture(pixels),renderer=new THREE.WebGLRenderer({antialias:false}),camera=new THREE.Camera(),scene=new THREE.Scene();
+ const material=new THREE.ShaderMaterial({glslVersion:THREE.GLSL3,vertexShader:'void main(){gl_Position=vec4(position.xy,0,1);}',
+  fragmentShader:`precision highp float;precision highp int;
+  ${stellaOcclusionGLSL}
+  uniform sampler2D uProbe;out vec4 result;
+  ivec2 address(int j){return ivec2(j&255,j>>8);}
+  void main(){int j=int(gl_FragCoord.x)+int(gl_FragCoord.y)*256;vec3 p=texelFetch(uProbe,address(j*3),0).xyz,b=texelFetch(uProbe,address(j*3+1),0).xyz;vec4 q=texelFetch(uProbe,address(j*3+2),0);
+  bool actual=StellaOccluded(p,b,q.x);result=actual==(q.y>.5)?vec4(0,1,0,1):vec4(1,0,0,1);}`,
+  uniforms:{uProbe:{value:data}}});
+ scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),material));
+ const height=Math.ceil(n/256),target=new THREE.WebGLRenderTarget(256,height);renderer.setRenderTarget(target);renderer.render(scene,camera);
+ const read=new Uint8Array(256*height*4);renderer.readRenderTargetPixels(target,0,0,256,height,read);
+ const failures=[];for(let j=0;j<n;j++)if(read[j*4+1]<200)failures.push(j);
+ if(failures.length)throw Error(`${failures.length} mismatches: ${failures.slice(0,10)}`);
+ output.textContent=`PASS ${n} GPU rays: reduced three-plane test equals independent two-tetrahedron reference.`;document.title='PASS: Stella octangula GPU';
+ target.dispose();material.dispose();data.dispose();renderer.dispose();
+}catch(e){output.textContent='FAIL '+e.stack;document.title='FAIL: Stella octangula GPU';}
+</script>

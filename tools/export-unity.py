@@ -63,6 +63,7 @@ def export(unity,out):
     source=unity/'Assets/HachigayoLab/NonconvexPolytopes/Data'
     gallery=unity/'Assets/HachigayoLab/RegularStarPolytopesGallery/Data'
     symbols={s['name']:s['symbol'] for s in read(gallery/'schlafli-tutorial.json')['symbols']}
+    compound_catalog = [m for m in read(out/'catalog.json')['models'] if m.get('compound')] if (out/'catalog.json').exists() else []
     catalog=[]
     for name in THREE+FOUR:
         four=name in FOUR;dimension=4 if four else 3
@@ -119,6 +120,7 @@ def export(unity,out):
         write_json(out/(name+'.json'),metadata)
         catalog.append({k:metadata[k] for k in ('id','dimension','title','symbol','source','unitCount','cellCount','full','original')})
         print(name,metadata['full'],flush=True)
+    catalog.extend(compound_catalog)
     write_json(out/'catalog.json',{'schema':1,'models':catalog,'coordinateConvention':'3D embedded as (x,y,0,z); 4D normalized to unit radius'})
     # Keep renderer metadata and adopted shader variants together on regeneration.
     import importlib.util

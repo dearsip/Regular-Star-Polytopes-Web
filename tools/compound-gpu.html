@@ -1,0 +1,36 @@
+<!doctype html><meta charset="utf-8"><title>Compound GPU validation</title>
+<style>body{font:16px monospace;background:#15212c;color:#ddd;white-space:pre-wrap}</style>
+<h1>Compound GPU validation</h1><pre id="results">Running…</pre>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import {fetchBinary,texture} from '../src/star-data.js';
+const output=document.querySelector('#results');
+const renderer=new THREE.WebGLRenderer({antialias:false});
+const camera=new THREE.Camera(),scene=new THREE.Scene(),quad=new THREE.Mesh(new THREE.PlaneGeometry(2,2));scene.add(quad);
+const all=await (await fetch('./compound-probes.json')).json(),reports=[];
+try {
+for(const [id,probes] of Object.entries(all)) {
+ const n=probes.length,pixels=new Float32Array(n*3*4);
+ for(let j=0;j<n;j++) {const p=probes[j];pixels.set(p.p,j*4);pixels.set(p.back,(n+j)*4);pixels.set([p.sine,p.cell,+p.hidden,0],(n*2+j)*4);}
+ const data=texture(pixels,n),atlas=texture(new Float32Array(await fetchBinary(`../data/${id}.pockets.bin.gz`)));
+ const source=await(await fetch(`../data/${id}.pocket.glsl`)).text();
+ const material=new THREE.ShaderMaterial({glslVersion:THREE.GLSL3,
+  vertexShader:'void main(){gl_Position=vec4(position.xy,0,1);}',
+  fragmentShader:`precision highp float;precision highp int;
+   ivec2 address(int index){return ivec2(index&255,index>>8);}
+   ${source}
+   uniform sampler2D uProbe;out vec4 result;
+   void main(){int j=int(gl_FragCoord.x);vec4 p=texelFetch(uProbe,ivec2(j,0),0),b=texelFetch(uProbe,ivec2(j,1),0),q=texelFetch(uProbe,ivec2(j,2),0);
+   bool actual=HullPocketOccludedEntry(p,b,q.x,int(q.y+.5));result=actual==(q.z>.5)?vec4(0,1,0,1):vec4(1,0,0,1);}`,
+  uniforms:{uPockets:{value:atlas},uProbe:{value:data}}});
+ quad.material=material;const target=new THREE.WebGLRenderTarget(n,1);renderer.setRenderTarget(target);renderer.render(scene,camera);
+ const read=new Uint8Array(n*4);renderer.readRenderTargetPixels(target,0,0,n,1,read);
+ const failures=[];for(let j=0;j<n;j++)if(read[j*4+1]<200)failures.push(j);
+ if(failures.length)throw new Error(`${id}: ${failures.length} GPU mismatches: ${failures.slice(0,10)}`);
+ reports.push(`${id}: PASS ${n} GPU rays`);output.textContent=reports.join('\n');
+ target.dispose();material.dispose();data.dispose();atlas.dispose();
+}
+output.textContent+='\nALL PASS';document.title='PASS: Compound GPU validation';
+}catch(e){output.textContent+='\nFAIL: '+e.stack;document.title='FAIL: Compound GPU validation';}
+</script>

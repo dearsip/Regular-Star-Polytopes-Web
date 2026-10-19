@@ -2,7 +2,7 @@
 
 # Regular Star Polytopes
 
-Explore all four regular star polyhedra and all ten regular star polychora through interactive projections. Rotate them, change the perspective, and look inside their intersecting surfaces.
+Explore all four regular star polyhedra and all ten regular star polychora and exceptional flag-transitive regular compounds through interactive projections. Rotate them, change the perspective, and look inside their intersecting surfaces.
 
 ![Viewer preview](docs/preview.png)
 

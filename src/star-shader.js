@@ -92,6 +92,21 @@ void main() {
         }
 #endif
     }
+#ifdef COMPOUND
+    vEntry=cell;
+#endif
+#ifdef COMPOUND_TETRA
+    vPreparedP=p*sign(normal4);
+    vPreparedBack=uBack*sign(normal4);
+#endif
+#ifdef COMPOUND_PREPARED
+    if(!uOriginal) {
+        vec4 a=pocket(uid*5),b=pocket(uid*5+1),c=pocket(uid*5+2),d=pocket(uid*5+3);
+        vPreparedP=vec4(dot(a,p),dot(b,p),dot(c,p),dot(d,p));
+        vPreparedBack=vec4(dot(a,uBack),dot(b,uBack),dot(c,uBack),dot(d,uBack));
+        vEntry=int(round(pocket(uid*5+4).x));
+    }
+#endif
     vec3 base=frame(cell,uHopfColors?6:5).rgb;
     float diffuse=abs(dot(normalize(aLightingNormal.xyz),normalize(vec3(.4,.8,-.6))));
     vColor=clamp(base*(.66+.30*diffuse)+.04*clamp((diffuse-.75)*4.0,0.0,1.0),0.0,1.0);
@@ -155,6 +170,8 @@ void main() {
         if(FixClipOccluded(clips))discard;
 #elif defined(POCKET_PREPARED_VERTEX)
         if(HullPocketOccludedPrepared(vPosition4,uBack,sine,vEntry,vPreparedP,vPreparedBack,vEntry>=0,false))discard;
+#elif defined(COMPOUND_PREPARED)
+        if(CompoundOccludedPrepared(vPreparedP,vPreparedBack,sine,vEntry))discard;
 #else
         if(HullPocketOccludedEntry(vPosition4,uBack,sine,vEntry))discard;
 #endif
@@ -163,15 +180,38 @@ void main() {
 }
 `;
 
+// In a source face's signed coordinates sum(p)=1/sqrt(3). Of the
+// other tetrahedron's four planes, the opposite source plane cannot
+// block a front-facing ray. The remaining three have distances 2*p.
+export const stellaOcclusionGLSL = /* glsl */`
+bool StellaOccluded(vec3 p,vec3 back,float sine) {
+    vec3 ray=-back-sine*p;
+    float nearT=2e-5/max(length(ray),1e-6),farT=sine>0.0?1.0/sine:1e20;
+    vec3 numerator=2.0*p,denominator=vec3(ray.x+ray.y+ray.z)-2.0*ray;
+    for(int j=0;j<3;j++) {
+        if(abs(denominator[j])<1e-9) { if(numerator[j]<-2e-7)return false; }
+        else if(denominator[j]>0.0)farT=min(farT,numerator[j]/denominator[j]);
+        else nearT=max(nearT,numerator[j]/denominator[j]);
+    }
+    return farT-nearT>2e-6;
+}
+`;
+
 export const polyhedronFragmentShader = /* glsl */`
 ${common}
 ${inputs}
 uniform sampler2D uBlocks;
 uniform int uBlockCount;
+#ifdef COMPOUND_TETRA
+${stellaOcclusionGLSL}
+#endif
 void main() {
     if(!uOriginal&&!selected(vPosition4))discard;
     float sine=sin(radians(clamp(uFoV,-175.0,175.0))*.5);
     if(uOcclusion&&!uOriginal) {
+#ifdef COMPOUND_TETRA
+        if(StellaOccluded(vPreparedP.xyw,vPreparedBack.xyw,sine))discard;
+#else
         vec3 p=vPosition4.xyw,d=-uBack.xyw-sine*p;
         float epsilon=2e-5/max(length(d),1e-6),maximum=sine>0.0?1.0/sine:1e20;
         int row=0;
@@ -185,6 +225,7 @@ void main() {
             }
             if(farT-nearT>2e-6&&farT>epsilon&&nearT<maximum)discard;
         }
+#endif
     }
     ${color}
 }

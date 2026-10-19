@@ -19,7 +19,7 @@ const initial = {
 };
 const canvas = $('viewer');
 let renderer;
-try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' }); }
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: params.has('verify') }); }
 catch (error) { $('loading').textContent = 'WebGL 2 を利用できません。WebGL 2 is required.'; throw error; }
 renderer.setClearColor(0x10181f);
 const scene = new THREE.Scene();
@@ -51,6 +51,23 @@ let model = null, loadController = null, mode = initial.mode, group = initial.gr
 let zoom = initial.zoom, firstLoad = true, meshes = [];
 let loading = true, shaderFailed = false;
 let needsRender = true;
+const gpuContext=renderer.getContext(),gpuTimer=gpuContext.getExtension('EXT_disjoint_timer_query_webgl2');
+let gpuQuery=null,gpuSamples=[];
+function updateCost() {
+    if(!model)return;
+    const original=mode==='single'||mode==='explosion';
+    const sorted=[...gpuSamples].sort((a,b)=>a-b),median=sorted[Math.floor(sorted.length/2)]??0;
+    const slow=model.metadata.compound&&(sorted.length>=3?median>8:median>12);
+    $('cost').hidden=original||!(model.metadata.full.triangles>=400000||slow);
+}
+function pollCost() {
+    if(!gpuQuery||!gpuContext.getQueryParameter(gpuQuery.query,gpuContext.QUERY_RESULT_AVAILABLE))return;
+    if(model?.metadata.id===gpuQuery.model&&mode===gpuQuery.mode&&!gpuContext.getParameter(gpuTimer.GPU_DISJOINT_EXT)) {
+        gpuSamples.push(gpuContext.getQueryParameter(gpuQuery.query,gpuContext.QUERY_RESULT)/1e6);
+        if(gpuSamples.length>9)gpuSamples.shift();updateCost();
+    }
+    gpuContext.deleteQuery(gpuQuery.query);gpuQuery=null;
+}
 // Heavy projections need no GPU work while the view is stationary.
 for (const event of ['input', 'change', 'click']) document.addEventListener(event, () => { needsRender = true; });
 for (const event of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'webglcontextrestored']) canvas.addEventListener(event, () => { needsRender = true; });
@@ -145,7 +162,8 @@ function applyMode() {
     $('groupControl').hidden = mode !== 'vertex';
     $('explosionControl').hidden = mode !== 'explosion';
     $('occlusion').disabled = original;
-    $('cost').hidden = original || model.metadata.full.triangles < 400000;
+    gpuSamples=[];updateCost();
+    $('modeNote').hidden=mode!=='explosion'||!model.metadata.explosionContact?.coincidentCentersWithCell0?.length;
     for (const button of document.querySelectorAll('[data-mode]')) button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
     updateGroup(); updateLabels();
 }
@@ -172,13 +190,14 @@ async function choose(id) {
         for (const mesh of meshes) { scene.remove(mesh); mesh.material.dispose(); }
         meshes = []; model?.resources.dispose(); model = next; shaderFailed=false;
         const m = model.metadata;
+        for(const button of document.querySelectorAll('[data-mode]')) button.hidden=false;
         controls.dimension = m.dimension; defaults();
         if (firstLoad) { restorePose(); firstLoad = false; }
         $('title').textContent = m.title; $('symbol').textContent = m.symbol;
         $('dimension').textContent = m.dimension === 4 ? '4D → 3D' : '3D → 2D';
         $('wiki').href = m.source;
         $('filterControl').hidden = m.dimension !== 4;
-        $('hopfControl').hidden = m.dimension !== 4;
+        $('hopfControl').hidden = m.dimension !== 4 || !!m.compound;
         $('group').replaceChildren(...m.groups.map((g, i) => new Option(g.label, String(i))));
         $('group').value = String(Math.max(0, Math.min(m.groups.length - 1, group)));
         document.querySelector('[data-mode="single"]').textContent = m.dimension === 4 ? 'Single cell' : 'Single face';
@@ -277,6 +296,7 @@ $('share').addEventListener('click', async () => {
 });
 
 function render() {
+    pollCost();
     const rect = canvas.parentElement.getBoundingClientRect();
     const width = Math.max(1, Math.floor(rect.width)), height = Math.max(1, Math.floor(rect.height));
     const ratio = Math.min(window.devicePixelRatio, 1.5) * Number($('resolution').value);
@@ -296,6 +316,8 @@ function render() {
     // A shared URL may start in stereo before any mono render updates the pose.
     camera.updateMatrixWorld(true);
     renderer.setScissorTest(false); renderer.setViewport(0, 0, width, height); renderer.clear();
+    const query=gpuTimer&&model?.metadata.compound&&!gpuQuery?gpuContext.createQuery():null;
+    if(query)gpuContext.beginQuery(gpuTimer.TIME_ELAPSED_EXT,query);
     if (stereo === 'off') renderer.render(scene, camera);
     else {
         stereoCamera.update(camera);
@@ -306,15 +328,18 @@ function render() {
         renderer.setViewport(viewWidth, 0, width - viewWidth, height); renderer.setScissor(viewWidth, 0, width - viewWidth, height); renderer.render(scene, right);
         renderer.setScissorTest(false);
     }
+    if(query){gpuContext.endQuery(gpuTimer.TIME_ELAPSED_EXT);gpuQuery={query,model:model.metadata.id,mode};}
 }
 renderer.setAnimationLoop(render);
 updateLabels();
 try {
     const catalog = await fetchJSON(new URL('../data/catalog.json', import.meta.url));
-    for (const dimension of [3, 4]) {
+    for (const [dimension,compound,noun] of [[3,false,'regular star polyhedra'],[3,true,'regular compound'],[4,false,'regular star polychora'],[4,true,'regular compounds']]) {
+        const models=catalog.models.filter(m=>m.dimension===dimension&&!!m.compound===compound);
+        if(!models.length)continue;
         const optionGroup = document.createElement('optgroup');
-        optionGroup.label = dimension === 3 ? '3D → 2D · 4 regular star polyhedra' : '4D → 3D · 10 regular star polychora';
-        for (const m of catalog.models.filter(m => m.dimension === dimension)) optionGroup.append(new Option(`${m.title} ${m.symbol}`, m.id));
+        optionGroup.label = `${dimension}D → ${dimension-1}D · ${models.length} ${noun}`;
+        for (const m of models) optionGroup.append(new Option(`${m.title} ${m.symbol}`, m.id));
         $('model').append(optionGroup);
     }
     $('model').disabled = false;

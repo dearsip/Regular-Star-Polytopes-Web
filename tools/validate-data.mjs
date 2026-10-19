@@ -6,9 +6,11 @@ const root = new URL('../', import.meta.url);
 const json = async name => JSON.parse(await readFile(new URL(name, root), 'utf8'));
 const binary = async name => gunzipSync(await readFile(new URL(name, root)));
 const catalog = await json('data/catalog.json');
-assert.equal(catalog.models.length, 14);
-assert.equal(catalog.models.filter(m => m.dimension === 3).length, 4);
-assert.equal(new Set(catalog.models.map(m => m.id)).size, 14);
+assert.equal(catalog.models.length, 21);
+assert.equal(catalog.models.filter(m => m.dimension === 3).length, 5);
+assert.equal(new Set(catalog.models.map(m => m.id)).size, 21);
+assert.equal(catalog.models.filter(m => m.compound && m.dimension===3).length, 1, '3D compounds');
+assert.equal(catalog.models.filter(m => m.compound && m.dimension===4).length, 6, '4D compounds');
 let triangles = 0;
 for (const item of catalog.models) {
   const m = await json(`data/${item.id}.json`);
@@ -17,6 +19,12 @@ for (const item of catalog.models) {
   assert(m.originalCell >= 0 && m.originalCell < m.cellCount);
   assert(Number.isFinite(m.explosionMax) && m.explosionMax > 0);
   assert.equal(m.sectorPlanes.length, m.sectorSizes.reduce((a, b) => a + b, 0) * m.dimension);
+  if(m.compound)assert.equal(m.unitCells.length,m.unitCount);
+  if(m.id==='StellaOctangula') {
+    assert.equal(m.componentCount,2);assert.equal(m.cellCount,8);assert.equal(m.unitCount,24);
+    assert.deepEqual(m.groups.map(g=>g.orbitSize),[8,6]);assert.deepEqual(m.groups.map(g=>g.units.length),[3,8]);
+    assert(m.shaderDefines.includes('COMPOUND_TETRA'));
+  }
   for (const group of m.groups) for (const id of group.units) assert(id >= 0 && id < m.unitCount);
   for (const kind of ['full', 'original']) {
     const b = await binary(`data/${m.id}.${kind === 'full' ? 'surface' : kind}.bin.gz`);
@@ -50,4 +58,4 @@ for (const item of catalog.models) {
 }
 const lock = await json('vendor/three/manifest.json');
 for (const [name, sha] of Object.entries(lock.sha256)) assert.equal(createHash('sha256').update(await readFile(new URL('vendor/three/' + name, root))).digest('hex'), sha);
-console.log(`Validated all 14 models (${triangles.toLocaleString()} triangles) and vendored Three.js.`);
+console.log(`Validated all 21 models (${triangles.toLocaleString()} triangles) and vendored Three.js.`);

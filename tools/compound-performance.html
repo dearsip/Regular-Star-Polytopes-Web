@@ -1,0 +1,48 @@
+<!doctype html><meta charset="utf-8"><title>Compound performance</title><pre id="results">Running</pre>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.js"}}</script>
+<script type="module">
+import * as T from 'three';
+import {loadModel,fetchBinary,texture} from '../src/star-data.js';
+import {starVertexShader,polychoronFragmentShader} from '../src/star-shader.js';
+const out=document.querySelector('#results'),reports=[];
+const renderer=new T.WebGLRenderer({antialias:false});renderer.setSize(768,768);document.body.append(renderer.domElement);
+const gl=renderer.getContext(),ext=gl.getExtension('EXT_disjoint_timer_query_webgl2');
+const target=new T.WebGLRenderTarget(768,768),read=new Uint8Array(4);renderer.setRenderTarget(target);
+const scene=new T.Scene(),camera=new T.PerspectiveCamera(38,1,.01,100);camera.position.z=3.4;camera.updateMatrixWorld();
+const pause=()=>new Promise(r=>{const c=new MessageChannel();c.port1.onmessage=()=>{c.port1.close();c.port2.close();r();};c.port2.postMessage(0);});
+async function time(mesh,batches=24){
+ renderer.render(scene,camera);gl.finish();const values=[];
+ for(let j=0;j<7;j++){
+  let q;if(ext){q=gl.createQuery();gl.beginQuery(ext.TIME_ELAPSED_EXT,q);}
+  const start=performance.now();for(let batch=0;batch<batches;batch++)renderer.render(scene,camera);if(ext)gl.endQuery(ext.TIME_ELAPSED_EXT);gl.finish();let ms=(performance.now()-start)/batches;
+  if(ext){while(!gl.getQueryParameter(q,gl.QUERY_RESULT_AVAILABLE))await pause();ms=gl.getQueryParameter(q,gl.QUERY_RESULT)/batches/1e6;gl.deleteQuery(q);if(gl.getParameter(ext.GPU_DISJOINT_EXT))throw Error('Disjoint GPU clock');}
+  values.push(ms);await pause();
+ }
+ return values.sort((a,b)=>a-b)[3];
+}
+try{
+const catalog=await(await fetch('../data/catalog.json')).json();
+for(const item of catalog.models.filter(x=>x.compound&&x.dimension===4&&(!new URLSearchParams(location.search).has('only')||x.id===new URLSearchParams(location.search).get('only')))){
+ const {metadata:m,resources:r}=await loadModel(item.id),id=item.id;
+ const foldedSource=await(await fetch(`./bench-baseline/${id}.folded.glsl`)).text();
+ const foldedAtlas=texture(new Float32Array(await fetchBinary(`./bench-baseline/${id}.folded.bin.gz`)));
+ const oldSource=await(await fetch(`./bench-baseline/${id}.pocket.glsl`)).text();
+ const directSource=id==='StellatedIcositetrachoron'?await(await fetch('./stellated-direct.glsl')).text():null;
+ const directAtlas=directSource?texture(new Float32Array(await fetchBinary('./stellated-direct.bin.gz'))):null;
+ const oldAtlas=texture(new Float32Array(await fetchBinary(`./bench-baseline/${id}.pockets.bin.gz`)));
+ const pose=new T.Matrix4();for(const [a,b,angle] of [[0,3,37],[1,3,19],[2,3,-23]]){const rot=new T.Matrix4(),v=rot.elements,c=Math.cos(angle*Math.PI/180),s=Math.sin(angle*Math.PI/180);v[a*4+a]=v[b*4+b]=c;v[b*4+a]=-s;v[a*4+b]=s;pose.premultiply(rot);}
+ const u={uFrames:{value:r.frames},uCenters:{value:r.centers},uUnitCells:{value:r.unitCells},uPerCell:{value:0},uOriginal:{value:false},uCullCells:{value:true},uBackOnly:{value:false},uHopfColors:{value:false},uExplosion:{value:0},uFoV:{value:60},uFilter:{value:-90},uOnlyCell:{value:-1},uBack:{value:new T.Vector4(0,0,0,1).applyMatrix4(pose.clone().transpose())},uPose:{value:pose},uOcclusion:{value:true},uSelection:{value:0},uSelectionUnits:{value:r.selection},uRegions:{value:r.regions},uRegionCount:{value:m.sectorSizes.length}};
+ const mesh=new T.Mesh(r.surface);mesh.frustumCulled=false;scene.add(mesh);const report={id,timing:ext?'GPU timer':'synchronized render wall time',resolution:768,poses:[]};
+ for(const fov of [0,60,150,-150]){
+  u.uFoV.value=fov;const row={fov};
+  for(const method of (directSource?['before','folded','direct']:['before','folded'])){
+   const mat=new T.ShaderMaterial({glslVersion:T.GLSL3,side:T.DoubleSide,vertexShader:starVertexShader,fragmentShader:polychoronFragmentShader(method==='before'?oldSource:method==='direct'?directSource:foldedSource),defines:method==='before'?{COMPOUND:1}:{COMPOUND:1,COMPOUND_PREPARED:1},uniforms:{...u,uPockets:{value:method==='before'?oldAtlas:method==='direct'?directAtlas:foldedAtlas}}});mesh.material=mat;
+   row[method]=await time(mesh,id==='MedialHexacosichoron'?1:24);mat.dispose();
+  }
+  report.poses.push(row);
+ }
+ reports.push(report);out.textContent=JSON.stringify(reports,null,2);scene.remove(mesh);r.dispose();oldAtlas.dispose();
+}
+document.title='PASS: Compound performance';out.textContent=JSON.stringify({renderer:gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info')?.UNMASKED_RENDERER_WEBGL??gl.RENDERER),reports},null,2);
+}catch(e){out.textContent+='\nFAIL '+e.stack;document.title='FAIL: Compound performance';}
+</script>
